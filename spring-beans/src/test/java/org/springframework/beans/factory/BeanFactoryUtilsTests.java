@@ -16,6 +16,8 @@
 
 package org.springframework.beans.factory;
 
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +35,7 @@ import org.springframework.beans.testfixture.beans.TestAnnotation;
 import org.springframework.beans.testfixture.beans.TestBean;
 import org.springframework.beans.testfixture.beans.factory.DummyFactory;
 import org.springframework.cglib.proxy.NoOp;
+import org.springframework.core.annotation.AliasFor;
 import org.springframework.core.io.Resource;
 import org.springframework.util.ObjectUtils;
 
@@ -60,9 +63,8 @@ public class BeanFactoryUtilsTests {
 
 
 	@BeforeEach
-	public void setUp() {
+	public void setup() {
 		// Interesting hierarchical factory to test counts.
-		// Slow to read so we cache it.
 
 		DefaultListableBeanFactory grandParent = new DefaultListableBeanFactory();
 		new XmlBeanDefinitionReader(grandParent).loadBeanDefinitions(ROOT_CONTEXT);
@@ -90,7 +92,7 @@ public class BeanFactoryUtilsTests {
 	 * Check that override doesn't count as two separate beans.
 	 */
 	@Test
-	public void testHierarchicalCountBeansWithOverride() throws Exception {
+	public void testHierarchicalCountBeansWithOverride() {
 		// Leaf count
 		assertThat(this.listableBeanFactory.getBeanDefinitionCount() == 1).isTrue();
 		// Count minus duplicate
@@ -98,14 +100,14 @@ public class BeanFactoryUtilsTests {
 	}
 
 	@Test
-	public void testHierarchicalNamesWithNoMatch() throws Exception {
+	public void testHierarchicalNamesWithNoMatch() {
 		List<String> names = Arrays.asList(
 				BeanFactoryUtils.beanNamesForTypeIncludingAncestors(this.listableBeanFactory, NoOp.class));
 		assertThat(names.size()).isEqualTo(0);
 	}
 
 	@Test
-	public void testHierarchicalNamesWithMatchOnlyInRoot() throws Exception {
+	public void testHierarchicalNamesWithMatchOnlyInRoot() {
 		List<String> names = Arrays.asList(
 				BeanFactoryUtils.beanNamesForTypeIncludingAncestors(this.listableBeanFactory, IndexedTestBean.class));
 		assertThat(names.size()).isEqualTo(1);
@@ -115,7 +117,7 @@ public class BeanFactoryUtilsTests {
 	}
 
 	@Test
-	public void testGetBeanNamesForTypeWithOverride() throws Exception {
+	public void testGetBeanNamesForTypeWithOverride() {
 		List<String> names = Arrays.asList(
 				BeanFactoryUtils.beanNamesForTypeIncludingAncestors(this.listableBeanFactory, ITestBean.class));
 		// includes 2 TestBeans from FactoryBeans (DummyFactory definitions)
@@ -233,7 +235,7 @@ public class BeanFactoryUtilsTests {
 	}
 
 	@Test
-	public void testHierarchicalResolutionWithOverride() throws Exception {
+	public void testHierarchicalResolutionWithOverride() {
 		Object test3 = this.listableBeanFactory.getBean("test3");
 		Object test = this.listableBeanFactory.getBean("test");
 
@@ -273,14 +275,14 @@ public class BeanFactoryUtilsTests {
 	}
 
 	@Test
-	public void testHierarchicalNamesForAnnotationWithNoMatch() throws Exception {
+	public void testHierarchicalNamesForAnnotationWithNoMatch() {
 		List<String> names = Arrays.asList(
 				BeanFactoryUtils.beanNamesForAnnotationIncludingAncestors(this.listableBeanFactory, Override.class));
 		assertThat(names.size()).isEqualTo(0);
 	}
 
 	@Test
-	public void testHierarchicalNamesForAnnotationWithMatchOnlyInRoot() throws Exception {
+	public void testHierarchicalNamesForAnnotationWithMatchOnlyInRoot() {
 		List<String> names = Arrays.asList(
 				BeanFactoryUtils.beanNamesForAnnotationIncludingAncestors(this.listableBeanFactory, TestAnnotation.class));
 		assertThat(names.size()).isEqualTo(1);
@@ -290,7 +292,7 @@ public class BeanFactoryUtilsTests {
 	}
 
 	@Test
-	public void testGetBeanNamesForAnnotationWithOverride() throws Exception {
+	public void testGetBeanNamesForAnnotationWithOverride() {
 		AnnotatedBean annotatedBean = new AnnotatedBean();
 		this.listableBeanFactory.registerSingleton("anotherAnnotatedBean", annotatedBean);
 		List<String> names = Arrays.asList(
@@ -322,6 +324,33 @@ public class BeanFactoryUtilsTests {
 	public void testIntDependencies() {
 		String[] deps = this.dependentBeansFactory.getDependentBeans("int");
 		assertThat(Arrays.equals(new String[] { "buffer" }, deps)).isTrue();
+	}
+
+	@Test
+	public void findAnnotationOnBean() {
+		this.listableBeanFactory.registerSingleton("controllerAdvice", new ControllerAdviceClass());
+		this.listableBeanFactory.registerSingleton("restControllerAdvice", new RestControllerAdviceClass());
+		testFindAnnotationOnBean(this.listableBeanFactory);
+	}
+
+	@Test  // gh-25520
+	public void findAnnotationOnBeanWithStaticFactory() {
+		StaticListableBeanFactory lbf = new StaticListableBeanFactory();
+		lbf.addBean("controllerAdvice", new ControllerAdviceClass());
+		lbf.addBean("restControllerAdvice", new RestControllerAdviceClass());
+		testFindAnnotationOnBean(lbf);
+	}
+
+	private void testFindAnnotationOnBean(ListableBeanFactory lbf) {
+		assertControllerAdvice(lbf, "controllerAdvice");
+		assertControllerAdvice(lbf, "restControllerAdvice");
+	}
+
+	private void assertControllerAdvice(ListableBeanFactory lbf, String beanName) {
+		ControllerAdvice controllerAdvice = lbf.findAnnotationOnBean(beanName, ControllerAdvice.class);
+		assertThat(controllerAdvice).isNotNull();
+		assertThat(controllerAdvice.value()).isEqualTo("com.example");
+		assertThat(controllerAdvice.basePackage()).isEqualTo("com.example");
 	}
 
 	@Test
@@ -393,10 +422,45 @@ public class BeanFactoryUtilsTests {
 	}
 
 
+	@Retention(RetentionPolicy.RUNTIME)
+	@interface ControllerAdvice {
+
+		@AliasFor("basePackage")
+		String value() default "";
+
+		@AliasFor("value")
+		String basePackage() default "";
+	}
+
+
+	@Retention(RetentionPolicy.RUNTIME)
+	@ControllerAdvice
+	@interface RestControllerAdvice {
+
+		@AliasFor(annotation = ControllerAdvice.class)
+		String value() default "";
+
+		@AliasFor(annotation = ControllerAdvice.class)
+		String basePackage() default "";
+	}
+
+
+	@ControllerAdvice("com.example")
+	static class ControllerAdviceClass {
+	}
+
+
+	@RestControllerAdvice("com.example")
+	static class RestControllerAdviceClass {
+	}
+
+
 	static class TestBeanSmartFactoryBean implements SmartFactoryBean<TestBean> {
 
 		private final TestBean testBean = new TestBean("enigma", 42);
+
 		private final boolean singleton;
+
 		private final boolean prototype;
 
 		TestBeanSmartFactoryBean(boolean singleton, boolean prototype) {
@@ -419,7 +483,7 @@ public class BeanFactoryUtilsTests {
 			return TestBean.class;
 		}
 
-		public TestBean getObject() throws Exception {
+		public TestBean getObject() {
 			// We don't really care if the actual instance is a singleton or prototype
 			// for the tests that use this factory.
 			return this.testBean;

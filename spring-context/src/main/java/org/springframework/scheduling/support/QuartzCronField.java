@@ -23,9 +23,6 @@ import java.time.temporal.ChronoUnit;
 import java.time.temporal.Temporal;
 import java.time.temporal.TemporalAdjuster;
 import java.time.temporal.TemporalAdjusters;
-import java.time.temporal.TemporalField;
-import java.time.temporal.WeekFields;
-import java.util.Locale;
 
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
@@ -81,6 +78,12 @@ final class QuartzCronField extends CronField {
 		this.rollForwardType = rollForwardType;
 	}
 
+	/**
+	 * Returns whether the given value is a Quartz day-of-month field.
+	 */
+	public static boolean isQuartzDaysOfMonthField(String value) {
+		return value.contains("L") || value.contains("W");
+	}
 
 	/**
 	 * Parse the given value into a days of months {@code QuartzCronField}, the fourth entry of a cron expression.
@@ -129,6 +132,13 @@ final class QuartzCronField extends CronField {
 	}
 
 	/**
+	 * Returns whether the given value is a Quartz day-of-week field.
+	 */
+	public static boolean isQuartzDaysOfWeekField(String value) {
+		return value.contains("L") || value.contains("#");
+	}
+
+	/**
 	 * Parse the given value into a days of week {@code QuartzCronField}, the sixth entry of a cron expression.
 	 * Expects a "L" or "#" in the given value.
 	 */
@@ -140,8 +150,8 @@ final class QuartzCronField extends CronField {
 			}
 			else {
 				TemporalAdjuster adjuster;
-				if (idx == 0) { // "L"
-					adjuster = lastDayOfWeek(Locale.getDefault());
+				if (idx == 0) {
+					throw new IllegalArgumentException("No day-of-week before 'L' in '" + value + "'");
 				}
 				else { // "[0-7]L"
 					DayOfWeek dayOfWeek = parseDayOfWeek(value.substring(0, idx));
@@ -194,18 +204,6 @@ final class QuartzCronField extends CronField {
 			Temporal lastDayOfMonth = TemporalAdjusters.lastDayOfMonth().adjustInto(temporal);
 			return lastDayOfMonth.plus(offset, ChronoUnit.DAYS);
 		};
-	}
-
-	/**
-	 * Return a temporal adjuster that finds the last day-of-week, depending
-	 * on the given locale.
-	 * @param locale the locale to base the last day calculation on
-	 * @return the last day-of-week adjuster
-	 */
-	private static TemporalAdjuster lastDayOfWeek(Locale locale) {
-		Assert.notNull(locale, "Locale must not be null");
-		TemporalField dayOfWeek = WeekFields.of(locale).dayOfWeek();
-		return temporal -> temporal.with(dayOfWeek, 7);
 	}
 
 	/**
